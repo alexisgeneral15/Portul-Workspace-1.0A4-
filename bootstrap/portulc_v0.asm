@@ -236,3 +236,152 @@ _start:
     mov rax, 60             ; sys_exit
     mov rdi, 0              ; Success
     syscall
+; =========================================================================
+; PORTUL 1.0A4 - STAGE 0: SYMBOL TABLE (Vigas de Acero en el Arena)
+; =========================================================================
+
+SECTION .data
+    ; Tipos de símbolos
+    SYM_NUM   equ 0x01
+    SYM_FLG   equ 0x02
+    SYM_OWN   equ 0x20
+    SYM_PTR   equ 0x21
+    
+    ERR_REDEF db "ERR: REDEF", 10
+    ERR_REDEF_LEN equ $ - ERR_REDEF
+
+SECTION .bss
+    ; Puntero dedicado para la Tabla de Símbolos dentro del Arena
+    SYM_TABLE_PTR resq 1
+    CURRENT_SCOPE resb 1          ; Nivel de scope actual (empieza en 0)
+
+; =========================================================================
+; 🏗️ MACROS DE LA TABLA DE SÍMBOLOS
+; =========================================================================
+
+; 1. Inicializar la Tabla (Llamar después de ARENA_INIT)
+%macro SYM_TABLE_INIT 0
+    mov qword [SYM_TABLE_PTR], r12  ; La tabla empieza donde empieza el Arena
+    mov byte [CURRENT_SCOPE], 0
+%endmacro
+
+; 2. Buscar un Símbolo (Linear Scan optimizado para < 50 items por scope)
+; Entrada: rsi = puntero al nombre en SOURCE_BUF, rcx = longitud del nombre
+; Salida:  rax = puntero al registro de 8 bytes (o 0 si no existe)
+%macro SYM_LOOKUP 0
+    mov r8, qword [SYM_TABLE_PTR]   ; r8 = inicio de la tabla
+    mov r9b, byte [CURRENT_SCOPE]   ; r9b = scope actual a buscar
+    
+.lookup_loop:
+    cmp r8, r12                     ; ¿Llegamos al final del Arena usado?
+    jge .not_found
+    
+    ; Verificar si el scope coincide (para permitir shadowing en scopes hijos, 
+    ; pero detectar redefinición en el mismo scope)
+    cmp byte [r8 + 4], r9b
+    jne .next_sym
+    
+    ; Verificar longitud del nombre
+    cmp byte [r8 + 2], cl
+    jne .next_sym
+    
+    ; Verificar contenido del nombre (usando rep cmpsb para velocidad)
+    push rsi
+    push rdi
+    push rcx
+    movzx rdi, word [r8]            ; rdi = offset del nombre guardado
+    add rdi, ARENA_START            ; convertir a puntero real
+    mov rsi, rsi                    ; rsi ya tiene el nombre a buscar
+    repe cmpsb                      ; comparar bytes
+    pop rcx
+    pop rdi
+    pop rsi
+    je .found                       ; ¡Coincidencia exacta!
+    
+.next_sym:
+    add r8, 8                       ; Avanzar al siguiente registro de 8 bytes
+    jmp .lookup_loop
+
+.not_found:
+    xor rax, rax                    ; Retornar 0 (null)
+    jmp .lookup_end
+
+.found:
+    mov rax, r8                     ; Retornar puntero al registro encontrado
+
+.lookup_end:
+%endmacro
+
+; 3. Agregar un Símbolo (Con protección anti-redefinición)
+; Entrada: rsi = puntero al nombre, rcx = longitud, dl = tipo (SYM_NUM, etc.)
+%macro SYM_ADD 0
+    ; PASO 1: Verificar que no exista ya en este scope (La viga anti-colapso)
+    SYM_LOOKUP
+    test rax, rax
+    jnz .error_redef                ; Si rax != 0, ya existe. ¡ERROR!
+
+    ; PASO 2: Calcular offset del nombre relativo al inicio del Arena
+    mov r8, rsi
+    sub r8, ARENA_START             ; r8 = offset de 16 bits del nombre
+    cmp r8, 0xFFFF                  ; Seguridad: no exceder 16 bits
+    jg .error_oom
+
+    ; PASO 3: Escribir el registro de 8 bytes en el tope del Arena
+    mov word [r12], r8w             ; [0-1]: name_off
+    mov byte [r12 + 2], cl          ; [2]: name_len
+    mov byte [r12 + 3], dl          ; [3]: type
+    mov al, byte [CURRENT_SCOPE]
+    mov byte [r12 + 4], al          ; [4]: scope
+    mov byte [r12 + 5], 0           ; [5]: flags (0 por defecto)
+    mov word [r12 + 6], 0           ; [6-7]: data_off (se llena en codegen)
+    
+    add r12, 8                      ; Avanzar el puntero del Arena 8 bytes
+    jmp .add_done
+
+.error_redef:
+    mov rax, 1; mov rdi, 1; mov rsi, ERR_REDEF; mov rdx, ERR_REDEF_LEN; syscall
+    mov rax, 60; mov rdi, 3; syscall ; Exit code 3: Redefinición
+
+.error_oom:
+    ; (Reutiliza el manejo de OOM definido anteriormente)
+    mov rax, 60; mov rdi, 1; syscall
+
+.add_done:
+%endmacro
+
+; 4. Cerrar Scope (La viga maestra de la Ley 1: Auto-free de 'own')
+; Cuando el parser encuentra '}', llama a esto.
+%macro SYM_CLOSE_SCOPE 0
+    dec byte [CURRENT_SCOPE]        ; Bajar un nivel de scope
+    mov r8, qword [SYM_TABLE_PTR]   ; Empezar a escanear desde el inicio
+    mov r9b, byte [CURRENT_SCOPE]   ; Scope que estamos cerrando (el hijo)
+    
+    ; Escanear hacia atrás es más eficiente, pero hacia adelante es más simple en NASM
+    ; Escaneamos hacia adelante buscando símbolos del scope que se cierra
+.close_loop:
+    cmp r8, r12
+    jge .close_done
+    
+    cmp byte [r8 + 4], r9b          ; ¿Es de este scope?
+    jne .next_close
+    
+    cmp byte [r8 + 3], SYM_OWN      ; ¿Es una variable 'own'?
+    jne .next_close
+    
+    ; ¡Es una variable 'own' saliendo de scope!
+    ; AQUÍ EL COMPILADOR EMITE AUTOMÁTICAMENTE EL OPCODE DE 'del'
+    ; (Ejemplo: EMIT_BC 0x50, EMIT_BC [r8 + 6] (su data_off))
+    ; Por ahora, solo simulamos la acción:
+    ; EMIT_BC 0x50  ; Opcode ficticio: OP_FREE_OWN
+    ; EMIT_BC [r8 + 6]
+    
+.next_close:
+    add r8, 8
+    jmp .close_loop
+
+.close_done:
+    ; Opcional: "Podar" el arena moviendo r12 hacia atrás para liberar 
+    ; los registros de símbolos de este scope, recuperando esos 8 bytes.
+    ; (Implementación de podado omitida por brevedad, pero es un simple 
+    ;  scan hacia atrás hasta encontrar un scope < CURRENT_SCOPE).
+%endmacro
