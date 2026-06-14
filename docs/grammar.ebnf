@@ -1,62 +1,113 @@
-; Gramática EBNF de Portul 1.0A4
-; (En construcción)
+(* ========================================================================= *)
+(* PORTUL 1.0A4 - GRAMÁTICA FORMAL (EBNF)                                    *)
+(* Cimiento de Roca: Determinista, sin ambigüedad shift/reduce, IA-friendly  *)
+(* ========================================================================= *)
 
-program = { declaration } ;
+(* 1. PROGRAMA RAÍZ *)
+program ::= { statement } ;
 
-declaration = fn_decl | var_decl | import_stmt ;
+(* 2. DECLARACIONES Y DEFINICIONES *)
+statement ::= var_decl 
+            | fn_def 
+            | class_def 
+            | control_flow 
+            | try_block 
+            | op_stmt 
+            | expr_stmt 
+            | system_hint 
+            | module_stmt 
+            | label_def ;
 
-fn_decl = "fn" identifier "(" [ param_list ] ")" [ "->" type_expr ] "{" expr "}" ;
+(* 2.1 Variables y Memoria (Ley 1: own vs ptr) *)
+var_decl ::= ("let" | "mut") type_spec? IDENTIFIER "=" expression ";"
+           | "own" IDENTIFIER "=" "ref" expression ";"
+           | "ptr" IDENTIFIER "=" "ref" expression ";" ;
 
-param_list = param { "," param } ;
+type_spec ::= "num" | "flg" | "str" | IDENTIFIER ;
 
-param = identifier ":" type_expr ;
+(* 2.2 Funciones y Clases (Ley 2: fn/class para definir, new para instanciar) *)
+fn_def ::= "fn" IDENTIFIER ["(" param_list ")"] "{" { statement } "}" ;
+param_list ::= IDENTIFIER { "," IDENTIFIER } ;
 
-var_decl = var_type identifier [ "=" expr ] ";" ;
+class_def ::= "class" IDENTIFIER "{" { fn_def } "}" ;
 
-var_type = "own" "<" type_expr ">" | "ptr" "<" type_expr ">" | type_expr ;
+(* 2.3 Control de Flujo (Ley 3: Condiciones SIEMPRE entre paréntesis) *)
+control_flow ::= "if" "(" expression ")" "{" { statement } "}" ["else" "{" { statement } "}"]
+               | "whl" "(" expression ")" "{" { statement } "}"
+               | "for" IDENTIFIER expression expression "{" { statement } "}"
+               | "jump" IDENTIFIER ";" ;
 
-type_expr = "i32" | "i64" | "f32" | "f64" | "bool" | "str" | ptr_type ;
+(* 2.4 Manejo de Errores *)
+try_block ::= "try" "{" { statement } "}" 
+              "err" IDENTIFIER "{" { statement } "}" 
+              "fin" "{" { statement } "}" ;
 
-ptr_type = "ptr" "<" type_expr ">" ;
+(* 3. OPERACIONES (Prefijas, 3-6 caracteres) *)
+op_stmt ::= math_op expression expression ";"
+          | logic_op expression expression ";"
+          | comp_op expression expression ";"
+          | bit_op expression expression ";"
+          | unary_op expression ";"
+          | atomic_op ";"
+          | "cal" IDENTIFIER [arg_list] ";"
+          | "ret" expression ";"
+          | "cont" ";"
+          | "del" IDENTIFIER ";" 
+          | "chk" IDENTIFIER ";" ;
 
-expr = or_expr ;
+math_op ::= "add" | "sub" | "mul" | "div" | "mod" ;
+logic_op ::= "and" | "or" | "xor" ;
+comp_op ::= "equ" | "neq" | "gt" | "lt" | "gte" | "lte" ;
+bit_op ::= "shl" | "shr" | "bit" ;
+unary_op ::= "inc" | "dec" | "neg" | "not" ;
 
-or_expr = and_expr { "||" and_expr } ;
+(* Concurrencia *)
+atomic_op ::= "atm" "add" expression expression 
+            | "cas" expression expression expression 
+            | "lck" IDENTIFIER 
+            | "unl" IDENTIFIER ;
 
-and_expr = equality_expr { "&&" equality_expr } ;
+(* 4. EXPRESIONES (Valores y evaluaciones) *)
+expression ::= literal 
+             | IDENTIFIER 
+             | "new" IDENTIFIER 
+             | "val" IDENTIFIER 
+             | "key" IDENTIFIER IDENTIFIER 
+             | "pos" IDENTIFIER expression 
+             | "len" IDENTIFIER 
+             | "sum" IDENTIFIER | "avg" IDENTIFIER | "min" IDENTIFIER | "max" IDENTIFIER
+             | "cat" expression expression 
+             | "cut" expression expression expression ;
 
-equality_expr = relational_expr { ( "==" | "!=" ) relational_expr } ;
+arg_list ::= expression { "," expression } ;
+literal ::= NUMBER | STRING | "0" | "1" ;
 
-relational_expr = additive_expr { ( "<" | ">" | "<=" | ">=" ) additive_expr } ;
+(* 5. SISTEMA Y OPTIMIZACIÓN (Hardware Hints) *)
+system_hint ::= ("fast" | "safe") "code" ";"
+              | "cache" ("hot" | "cold") ";"
+              | "loop" IDENTIFIER IDENTIFIER ";"
+              | "pin" "core" ";"
+              | "sync" "wait" ";"
+              | "task" "spawn" ";"
+              | "pool" "workers" ";"
+              | "work" "execute" ";"
+              | "done" "finish" ";" ;
 
-additive_expr = multiplicative_expr { ( "+" | "-" ) multiplicative_expr } ;
+(* 6. MÓDULOS *)
+module_stmt ::= "use" STRING ";" 
+              | "exp" IDENTIFIER ";" ;
 
-multiplicative_expr = unary_expr { ( "*" | "/" | "%" ) unary_expr } ;
+(* 7. LÉXICO (Tokens) *)
+IDENTIFIER ::= letter { letter | digit | "_" } ;
+NUMBER ::= digit { digit } ;
+STRING ::= '"' { any_char_except_quote } '"' ;
+letter ::= "a".."z" | "A".."Z" ;
+digit ::= "0".."9" ;
+label_def ::= IDENTIFIER ":" ;
 
-unary_expr = [ "!" | "-" ] primary_expr ;
-
-primary_expr = literal | identifier | "(" expr ")" | fn_call | if_expr | while_expr | for_expr ;
-
-fn_call = identifier "(" [ arg_list ] ")" ;
-
-arg_list = expr { "," expr } ;
-
-if_expr = "if" expr "{" expr "}" [ "else" "{" expr "}" ] ;
-
-while_expr = "while" expr "{" expr "}" ;
-
-for_expr = "for" identifier "in" expr ".." expr "{" expr "}" ;
-
-literal = number | string | bool_literal ;
-
-number = digit { digit } ;
-
-string = '"' { ? any character ? } '"' ;
-
-bool_literal = "true" | "false" ;
-
-identifier = letter { letter | digit | "_" } ;
-
-letter = "a" .. "z" | "A" .. "Z" ;
-
-digit = "0" .. "9" ;
+(* ========================================================================= *)
+(* NOTAS PARA EL DESARROLLADOR DEL PARSER:                                   *)
+(* 1. "del" sobre variable declarada como "own" debe ser rechazado en la   *)
+(*    fase semántica, no aquí. La EBNF solo valida la sintaxis.            *)
+(* 2. Los paréntesis en "if" y "whl" eliminan la ambigüedad del AST.       *)
+(* ========================================================================= *)
