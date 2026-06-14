@@ -385,3 +385,300 @@ SECTION .bss
     ; (Implementación de podado omitida por brevedad, pero es un simple 
     ;  scan hacia atrás hasta encontrar un scope < CURRENT_SCOPE).
 %endmacro
+
+; =========================================================================
+; PORTUL 1.0A4 - STAGE 0: PARSER DE DECLARACIONES (Vigas Maestras)
+; =========================================================================
+
+SECTION .data
+    ; Tokens
+    TOK_EOF   equ 0
+    TOK_LET   equ 1
+    TOK_MUT   equ 2
+    TOK_OWN   equ 3
+    TOK_PTR   equ 4
+    TOK_FN    equ 5
+    TOK_REF   equ 6
+    TOK_IDENT equ 10
+    TOK_NUM   equ 11
+    TOK_EQ    equ 12
+    TOK_SEMI  equ 13
+    TOK_LBRC  equ 14  ; '{'
+    TOK_RBRC  equ 15  ; '}'
+
+    ; Tipos para Symbol Table
+    SYM_NUM   equ 0x01
+    SYM_OWN   equ 0x20
+    SYM_PTR   equ 0x21
+    SYM_FN    equ 0x10
+
+    ERR_SYN   db "ERR: SYNTAX", 10
+    ERR_SYN_LEN equ $ - ERR_SYN
+
+SECTION .bss
+    ; Variables de estado del Lexer/Parser (Mantenidas en registros siempre que sea posible)
+    ; rsi = src_ptr, r8 = current_token, r9 = token_value/ptr, r10 = token_len
+
+; =========================================================================
+; 🧠 LEXER (Versión extendida para el Parser)
+; =========================================================================
+lex_next:
+    ; 1. Saltar espacios (simplificado)
+.skip_spaces:
+    mov al, byte [rsi]
+    cmp al, 0
+    je .eof
+    cmp al, 32
+    je .next_char
+    cmp al, 10
+    je .next_char
+    jmp .check
+.next_char:
+    inc rsi
+    jmp .skip_spaces
+
+.check:
+    ; 2. Detectar Keywords (Comparación de 2-3 bytes en Little Endian)
+    movzx cx, word [rsi]
+    
+    ; 'le' (let) -> 0x656c
+    cmp cx, 0x656c
+    je .is_let
+    ; 'mu' (mut) -> 0x756d
+    cmp cx, 0x756d
+    je .is_mut
+    ; 'ow' (own) -> 0x776f
+    cmp cx, 0x776f
+    je .is_own
+    ; 'pt' (ptr) -> 0x7470
+    cmp cx, 0x7470
+    je .is_ptr
+    ; 'fn' -> 0x6E66
+    cmp cx, 0x6E66
+    je .is_fn
+    ; 're' (ref) -> 0x6572
+    cmp cx, 0x6572
+    je .is_ref
+
+    ; 3. Detectar Símbolos
+    cmp al, '='
+    je .is_eq
+    cmp al, ';'
+    je .is_semi
+    cmp al, '{'
+    je .is_lbrc
+    cmp al, '}'
+    je .is_rbrc
+
+    ; 4. Detectar Números
+    cmp al, '0'
+    jl .is_ident
+    cmp al, '9'
+    jg .is_ident
+    jmp .parse_num
+
+.is_let:    mov r8d, TOK_LET;  add rsi, 3; ret
+.is_mut:    mov r8d, TOK_MUT;  add rsi, 3; ret
+.is_own:    mov r8d, TOK_OWN;  add rsi, 3; ret
+.is_ptr:    mov r8d, TOK_PTR;  add rsi, 3; ret
+.is_fn:     mov r8d, TOK_FN;   add rsi, 2; ret
+.is_ref:    mov r8d, TOK_REF;  add rsi, 3; ret
+.is_eq:     mov r8d, TOK_EQ;   inc rsi; ret
+.is_semi:   mov r8d, TOK_SEMI; inc rsi; ret
+.is_lbrc:   mov r8d, TOK_LBRC; inc rsi; ret
+.is_rbrc:   mov r8d, TOK_RBRC; inc rsi; ret
+
+.parse_num:
+    xor r9, r9              ; r9 = valor acumulado
+.p_digits:
+    mov al, byte [rsi]
+    cmp al, '0'
+    jl .end_num
+    cmp al, '9'
+    jg .end_num
+    sub al, '0'
+    movzx rax, al
+    mov rcx, 10
+    mul rcx                 ; rdx:rax = rax * 10
+    ; (Simplificación: asumimos que no hay desbordamiento de r9 en Stage 0)
+    mov r9, rax
+    inc rsi
+    jmp .p_digits
+.end_num:
+    mov r8d, TOK_NUM
+    ret
+
+.is_ident:
+    mov r8d, TOK_IDENT
+    mov r9, rsi             ; r9 = puntero al inicio del ident
+    mov r10, 0              ; r10 = longitud
+.read_id:
+    mov al, byte [rsi]
+    cmp al, 32
+    je .end_id
+    cmp al, 0
+    je .end_id
+    cmp al, '='
+    je .end_id
+    cmp al, ';'
+    je .end_id
+    inc rsi
+    inc r10
+    jmp .read_id
+.end_id:
+    ret
+
+.eof:
+    mov r8d, TOK_EOF
+    ret
+
+; =========================================================================
+; 🏗️ PARSER: Programa y Sentencias
+; =========================================================================
+parse_program:
+    call lex_next
+.prog_loop:
+    cmp r8d, TOK_EOF
+    je .done
+    
+    ; Despachador de sentencias
+    cmp r8d, TOK_LET
+    je parse_var_decl
+    cmp r8d, TOK_MUT
+    je parse_var_decl
+    cmp r8d, TOK_OWN
+    je parse_var_decl
+    cmp r8d, TOK_PTR
+    je parse_var_decl
+    cmp r8d, TOK_FN
+    je parse_fn_decl
+    
+    ; Si no es una declaración válida, error de sintaxis
+    jmp syntax_error
+
+.done:
+    ret
+
+; =========================================================================
+; 🏗️ PARSER: Declaración de Variables (let, mut, own, ptr)
+; =========================================================================
+parse_var_decl:
+    ; 1. Determinar el tipo de símbolo basado en el token actual (r8)
+    mov dl, SYM_NUM         ; Por defecto para let/mut
+    cmp r8d, TOK_OWN
+    je .is_own_ptr
+    cmp r8d, TOK_PTR
+    je .is_own_ptr
+    jmp .after_type_check
+
+.is_own_ptr:
+    cmp r8d, TOK_OWN
+    je .is_own
+    mov dl, SYM_PTR         ; Es PTR
+    jmp .after_type_check
+.is_own:
+    mov dl, SYM_OWN         ; Es OWN
+
+.after_type_check:
+    call lex_next           ; Consumir keyword, ahora r8 debe ser TOK_IDENT
+
+    cmp r8d, TOK_IDENT
+    jne syntax_error
+
+    ; 2. ¡VIGA MAESTRA! Registrar en la Tabla de Símbolos
+    ; r9 tiene el puntero al nombre, r10 tiene la longitud, dl tiene el tipo
+    mov rsi, r9
+    mov rcx, r10
+    SYM_ADD                 ; Si ya existe en este scope, el compilador aborta aquí (ERR: REDEF)
+
+    call lex_next           ; Consumir ident, ahora r8 debe ser TOK_EQ
+
+    cmp r8d, TOK_EQ
+    jne syntax_error
+
+    call lex_next           ; Consumir '=', ahora r8 debe ser TOK_NUM o TOK_REF
+
+    ; 3. Parsear el valor inicial
+    cmp r8d, TOK_REF
+    je .parse_ref
+    
+    ; Es un número (let x = 10)
+    cmp r8d, TOK_NUM
+    jne syntax_error
+    ; AQUÍ: El parser emitiría el bytecode para guardar el valor (r9) 
+    ; y actualizaría el 'data_off' del símbolo recién creado.
+    jmp .expect_semi
+
+.parse_ref:
+    ; Es una referencia (own p = ref x)
+    call lex_next           ; Consumir 'ref', ahora r8 debe ser TOK_IDENT
+    cmp r8d, TOK_IDENT
+    jne syntax_error
+    ; AQUÍ: El parser verificaría en la Symbol Table que 'x' existe y es válido,
+    ; y emitiría el bytecode de asignación de referencia.
+    jmp .expect_semi
+
+.expect_semi:
+    call lex_next           ; Consumir valor/ref, ahora r8 debe ser TOK_SEMI
+    cmp r8d, TOK_SEMI
+    jne syntax_error
+    
+    call lex_next           ; Consumir ';', listo para la siguiente sentencia
+    jmp parse_program       ; Continuar parseando
+
+; =========================================================================
+; 🏗️ PARSER: Declaración de Funciones (fn)
+; =========================================================================
+parse_fn_decl:
+    call lex_next           ; Consumir 'fn', ahora r8 debe ser TOK_IDENT
+    cmp r8d, TOK_IDENT
+    jne syntax_error
+
+    ; 1. Registrar la función en la Tabla de Símbolos (Scope Global usualmente)
+    mov rsi, r9
+    mov rcx, r10
+    mov dl, SYM_FN
+    SYM_ADD
+
+    call lex_next           ; Consumir ident, ahora r8 debe ser TOK_LBRC '{'
+    cmp r8d, TOK_LBRC
+    jne syntax_error
+
+    ; 2. ¡ABRIR SCOPE! (La viga que permite el auto-free)
+    inc byte [CURRENT_SCOPE]
+
+    call lex_next           ; Consumir '{'
+
+    ; 3. Parsear el cuerpo de la función
+.fn_body_loop:
+    cmp r8d, TOK_RBRC
+    je .end_fn
+
+    ; (Aquí irían las llamadas a parse_statement para el cuerpo: if, whl, add, ret, etc.)
+    ; Por brevedad, asumimos que consume tokens hasta encontrar '}'
+    call lex_next
+    jmp .fn_body_loop
+
+.end_fn:
+    ; 4. ¡CERRAR SCOPE! (La magia de la Ley 1)
+    ; Esta macro escanea la Symbol Table y emite automáticamente los opcodes 
+    ; de liberación ('del') para cualquier variable marcada como SYM_OWN en este scope.
+    SYM_CLOSE_SCOPE
+    
+    dec byte [CURRENT_SCOPE]
+    
+    call lex_next           ; Consumir '}'
+    jmp parse_program       ; Continuar con el programa
+
+; =========================================================================
+; 🚨 MANEJO DE ERRORES
+; =========================================================================
+syntax_error:
+    mov rax, 1
+    mov rdi, 1
+    mov rsi, ERR_SYN
+    mov rdx, ERR_SYN_LEN
+    syscall
+    mov rax, 60
+    mov rdi, 4              ; Exit code 4: Syntax Error
+    syscall
