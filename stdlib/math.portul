@@ -1,0 +1,17 @@
+; LA BIBLIOTECA ESTÁNDAR - MATH
+; Operaciones matemáticas avanzadas
+
+; sum - Suma de elementos
+fn sum(array: ptr<i32>, length: i32) -> i32
+
+; avg - Promedio de elementos
+fn avg(array: ptr<i32>, length: i32) -> i32
+
+; min - Valor mínimo
+fn min(array: ptr<i32>, length: i32) -> i32
+
+; max - Valor máximo
+fn max(array: ptr<i32>, length: i32) -> i32
+
+; abs - Valor absoluto
+fn abs(value: i32) -> i32

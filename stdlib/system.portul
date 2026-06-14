@@ -1,0 +1,21 @@
+; LA BIBLIOTECA ESTÁNDAR - SYSTEM
+; Operaciones a nivel de sistema
+
+; pin core - Anclar thread al núcleo
+; Uso: (pin core core_id)
+fn pin_core(core_id: i32) -> void
+
+; heap alloc - Asignación de memoria en el heap
+; Uso: (heap alloc size)
+fn heap_alloc(size: i32) -> ptr<u8>
+
+; heap free - Liberación de memoria
+; Uso: (heap free address)
+fn heap_free(address: ptr<u8>) -> void
+
+; cache hot - Marcar como hot para cache optimization
+; Uso: (cache hot address)
+fn cache_hot(address: ptr<u8>) -> void
+
+; get_time - Obtiene el tiempo en microsegundos
+fn get_time() -> i64

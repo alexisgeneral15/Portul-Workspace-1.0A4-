@@ -1,0 +1,18 @@
+; LA BIBLIOTECA ESTÁNDAR - CORE
+; Tipos básicos y operaciones fundamentales
+
+; Operación: put - Escribe un valor
+; Uso: (put value)
+fn put(value: i32) -> void
+
+; Operación: get - Lee un valor
+; Uso: (get address)
+fn get(address: ptr<i32>) -> i32
+
+; Operación: len - Obtiene la longitud de un array
+; Uso: (len array)
+fn len(array: ptr<i32>) -> i32
+
+; Operación: print - Imprime en consola
+; Uso: (print "Hello, World!")
+fn print(message: str) -> void

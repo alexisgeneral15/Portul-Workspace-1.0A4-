@@ -1,0 +1,29 @@
+# Compiler artifacts
+/target/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build
+/build/
+/dist/
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.env
+
+# Portul
+*.portul.o
+*.portul.ll

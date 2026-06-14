@@ -1,0 +1,62 @@
+; Gramática EBNF de Portul 1.0A4
+; (En construcción)
+
+program = { declaration } ;
+
+declaration = fn_decl | var_decl | import_stmt ;
+
+fn_decl = "fn" identifier "(" [ param_list ] ")" [ "->" type_expr ] "{" expr "}" ;
+
+param_list = param { "," param } ;
+
+param = identifier ":" type_expr ;
+
+var_decl = var_type identifier [ "=" expr ] ";" ;
+
+var_type = "own" "<" type_expr ">" | "ptr" "<" type_expr ">" | type_expr ;
+
+type_expr = "i32" | "i64" | "f32" | "f64" | "bool" | "str" | ptr_type ;
+
+ptr_type = "ptr" "<" type_expr ">" ;
+
+expr = or_expr ;
+
+or_expr = and_expr { "||" and_expr } ;
+
+and_expr = equality_expr { "&&" equality_expr } ;
+
+equality_expr = relational_expr { ( "==" | "!=" ) relational_expr } ;
+
+relational_expr = additive_expr { ( "<" | ">" | "<=" | ">=" ) additive_expr } ;
+
+additive_expr = multiplicative_expr { ( "+" | "-" ) multiplicative_expr } ;
+
+multiplicative_expr = unary_expr { ( "*" | "/" | "%" ) unary_expr } ;
+
+unary_expr = [ "!" | "-" ] primary_expr ;
+
+primary_expr = literal | identifier | "(" expr ")" | fn_call | if_expr | while_expr | for_expr ;
+
+fn_call = identifier "(" [ arg_list ] ")" ;
+
+arg_list = expr { "," expr } ;
+
+if_expr = "if" expr "{" expr "}" [ "else" "{" expr "}" ] ;
+
+while_expr = "while" expr "{" expr "}" ;
+
+for_expr = "for" identifier "in" expr ".." expr "{" expr "}" ;
+
+literal = number | string | bool_literal ;
+
+number = digit { digit } ;
+
+string = '"' { ? any character ? } '"' ;
+
+bool_literal = "true" | "false" ;
+
+identifier = letter { letter | digit | "_" } ;
+
+letter = "a" .. "z" | "A" .. "Z" ;
+
+digit = "0" .. "9" ;

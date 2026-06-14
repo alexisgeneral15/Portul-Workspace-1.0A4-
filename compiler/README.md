@@ -11,29 +11,6 @@ Toolchain completo del lenguaje Portul.
 - **ir/**: Representación Intermedia optimizada para hardware de 5KB
 - **codegen/**: Generación de bytecode o ensamblador objetivo
 
-## Estructura
-
-```
-compiler/
-├── src/
-│   ├── lexer/
-│   │   └── mod.rs
-│   ├── parser/
-│   │   └── mod.rs
-│   ├── ast/
-│   │   └── mod.rs
-│   ├── semantic/
-│   │   └── mod.rs
-│   ├── ir/
-│   │   └── mod.rs
-│   ├── codegen/
-│   │   └── mod.rs
-│   └── main.rs
-├── tests/
-│   └── integration_tests.rs
-└── Cargo.toml
-```
-
 ## Tests
 
 Todos los cambios en el compilador DEBEN pasar los tests unitarios e integración.

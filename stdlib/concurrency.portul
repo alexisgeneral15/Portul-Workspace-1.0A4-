@@ -1,0 +1,22 @@
+; LA BIBLIOTECA ESTÁNDAR - CONCURRENCY
+; Operaciones atómicas y de sincronización
+
+; cas - Compare-And-Swap (Operación atómica)
+; Uso: (cas address expected new)
+fn cas(address: ptr<i32>, expected: i32, new: i32) -> bool
+
+; atm - Atomic increment
+; Uso: (atm address)
+fn atm(address: ptr<i32>) -> i32
+
+; lck - Lock (Mutex)
+; Uso: (lck lock_id)
+fn lck(lock_id: i32) -> void
+
+; unlck - Unlock
+; Uso: (unlck lock_id)
+fn unlck(lock_id: i32) -> void
+
+; pool workers - Pool de workers
+; Uso: (pool.spawn worker_id task)
+fn pool_spawn(worker_id: i32, task: fn() -> void) -> void

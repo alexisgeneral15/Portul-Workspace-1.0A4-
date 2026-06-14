@@ -1,0 +1,33 @@
+; EJEMPLO: Memory Safety con own vs ptr
+; Demuestra la gestión segura de memoria en Portul
+
+fn memory_safety_demo() {
+    ; own<T> - Ownership exclusivo
+    own<i32> x = 42;
+    
+    ; ptr<T> - Reference (no toma ownership)
+    ptr<i32> p = &x;
+    
+    ; Leer a través del puntero
+    own<i32> value = get(p);  ; value = 42
+    
+    ; Bloque fin - Se ejecuta al salir del scope
+    fin {
+        put(value);  ; Prints: 42
+    }
+    
+    ; x se limpia automáticamente aquí
+}
+
+fn safe_array_access() {
+    ; Array en stack
+    own<i32> array = [1, 2, 3, 4, 5];
+    
+    ; Obtener longitud
+    own<i32> length = len(&array);
+    
+    ; Iterar de forma segura
+    for i in 0..length {
+        put(get(&array[i]));
+    }
+}

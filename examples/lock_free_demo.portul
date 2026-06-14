@@ -1,0 +1,28 @@
+; EJEMPLO: Lock-Free Programming con Portul
+; Demuestra el uso de cas (Compare-And-Swap) para operaciones atómicas
+
+fn lock_free_counter() {
+    own<i32> counter = 0;
+    
+    ; Incremento sin lock usando cas
+    fn increment() {
+        loop {
+            own<i32> current = counter;
+            own<i32> next = current + 1;
+            
+            if cas(&counter, current, next) {
+                ; Swap exitoso, salir del loop
+                break;
+            }
+            ; Reintentar si otro thread cambió el valor
+        }
+    }
+    
+    ; Llamar increment desde múltiples threads
+    ; (pool.spawn se usa para paralelismo)
+    for i in 0..4 {
+        pool_spawn(i, increment);
+    }
+    
+    put(counter);
+}
